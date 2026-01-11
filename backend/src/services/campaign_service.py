@@ -1,0 +1,286 @@
+"""
+Campaign service for managing narrative campaigns.
+Implements Warhammer 40K Crusade/Narrative Play rules.
+"""
+
+from typing import Dict, Optional
+from dataclasses import dataclass
+import aiosqlite
+from src.services.database_service import DatabaseService
+
+
+@dataclass
+class NarrativeOutcome:
+    """Result of a narrative game."""
+    attacker_won: bool
+    defender_won: bool
+    is_draw: bool
+    attacker_req: int
+    defender_req: int
+    attacker_score: int
+    defender_score: int
+    winner_id: Optional[int] = None
+
+
+class CampaignService:
+    """Service for managing narrative campaigns and progression."""
+    
+    # Requisition Point Rules
+    REQUISITION_WIN = 3
+    REQUISITION_LOSS = 2
+    REQUISITION_DRAW = 2
+    
+    # Supply Limit Rules
+    STARTING_SUPPLY_LIMIT = 50
+    MAX_SUPPLY_LIMIT = 100
+    SUPPLY_INCREASE_PER_WIN = 5
+    
+    def __init__(self, db_service: DatabaseService):
+        """
+        Initialize campaign service.
+        
+        Args:
+            db_service: Database service instance
+        """
+        self.db = db_service
+    
+    def calculate_narrative_outcome(
+        self,
+        attacker_score: int,
+        defender_score: int,
+        mission_type: str = "standard"
+    ) -> NarrativeOutcome:
+        """
+        Calculate the outcome of a narrative game.
+        
+        Args:
+            attacker_score: Victory points scored by attacker
+            defender_score: Victory points scored by defender
+            mission_type: Type of mission played
+            
+        Returns:
+            NarrativeOutcome with requisition points and results
+        """
+        is_draw = attacker_score == defender_score
+        attacker_won = attacker_score > defender_score
+        defender_won = defender_score > attacker_score
+        
+        # Assign requisition points based on outcome
+        if is_draw:
+            attacker_req = self.REQUISITION_DRAW
+            defender_req = self.REQUISITION_DRAW
+        elif attacker_won:
+            attacker_req = self.REQUISITION_WIN
+            defender_req = self.REQUISITION_LOSS
+        else:
+            attacker_req = self.REQUISITION_LOSS
+            defender_req = self.REQUISITION_WIN
+        
+        return NarrativeOutcome(
+            attacker_won=attacker_won,
+            defender_won=defender_won,
+            is_draw=is_draw,
+            attacker_req=attacker_req,
+            defender_req=defender_req,
+            attacker_score=attacker_score,
+            defender_score=defender_score
+        )
+    
+    async def record_campaign_game(
+        self,
+        campaign_id: int,
+        attacker_id: int,
+        defender_id: int,
+        attacker_score: int,
+        defender_score: int,
+        mission_type: str = "standard",
+        notes: Optional[str] = None
+    ) -> Dict:
+        """
+        Record a campaign game and update participant statistics.
+        
+        Args:
+            campaign_id: Campaign ID
+            attacker_id: Attacker player ID
+            defender_id: Defender player ID
+            attacker_score: Attacker's score
+            defender_score: Defender's score
+            mission_type: Mission type
+            notes: Optional game notes
+            
+        Returns:
+            Dictionary with game ID and outcome details
+        """
+        # Calculate narrative outcome
+        outcome = self.calculate_narrative_outcome(
+            attacker_score,
+            defender_score,
+            mission_type
+        )
+        
+        # Determine winner ID
+        winner_id = None
+        if outcome.attacker_won:
+            winner_id = attacker_id
+        elif outcome.defender_won:
+            winner_id = defender_id
+        
+        # Record the game in database
+        game_id = await self._create_campaign_game_record(
+            campaign_id=campaign_id,
+            attacker_id=attacker_id,
+            defender_id=defender_id,
+            attacker_score=attacker_score,
+            defender_score=defender_score,
+            attacker_req=outcome.attacker_req,
+            defender_req=outcome.defender_req,
+            winner_id=winner_id,
+            mission_type=mission_type,
+            notes=notes
+        )
+        
+        # Update participant statistics
+        await self._update_participant_stats(
+            campaign_id=campaign_id,
+            player_id=attacker_id,
+            requisition_gained=outcome.attacker_req,
+            won=outcome.attacker_won
+        )
+        
+        await self._update_participant_stats(
+            campaign_id=campaign_id,
+            player_id=defender_id,
+            requisition_gained=outcome.defender_req,
+            won=outcome.defender_won
+        )
+        
+        return {
+            "game_id": game_id,
+            "outcome": outcome.__dict__
+        }
+    
+    async def add_participant(
+        self,
+        campaign_id: int,
+        player_id: int
+    ) -> int:
+        """
+        Add a player to a campaign.
+        
+        Args:
+            campaign_id: Campaign ID
+            player_id: Player ID
+            
+        Returns:
+            Participant ID
+        """
+        async with aiosqlite.connect(self.db.db_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO campaign_participants (campaign_id, player_id)
+                VALUES (?, ?)
+                """,
+                (campaign_id, player_id)
+            )
+            await db.commit()
+            return cursor.lastrowid
+    
+    async def get_participant_stats(
+        self,
+        campaign_id: int,
+        player_id: int
+    ) -> Optional[Dict]:
+        """
+        Get participant statistics for a campaign.
+        
+        Args:
+            campaign_id: Campaign ID
+            player_id: Player ID
+            
+        Returns:
+            Dictionary with participant stats or None
+        """
+        async with aiosqlite.connect(self.db.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """
+                SELECT * FROM campaign_participants
+                WHERE campaign_id = ? AND player_id = ?
+                """,
+                (campaign_id, player_id)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+    
+    async def _create_campaign_game_record(
+        self,
+        campaign_id: int,
+        attacker_id: int,
+        defender_id: int,
+        attacker_score: int,
+        defender_score: int,
+        attacker_req: int,
+        defender_req: int,
+        winner_id: Optional[int],
+        mission_type: str,
+        notes: Optional[str]
+    ) -> int:
+        """Create campaign game record in database."""
+        async with aiosqlite.connect(self.db.db_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO campaign_games (
+                    campaign_id, attacker_id, defender_id,
+                    attacker_score, defender_score,
+                    attacker_req, defender_req,
+                    winner_id, mission_type, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    campaign_id, attacker_id, defender_id,
+                    attacker_score, defender_score,
+                    attacker_req, defender_req,
+                    winner_id, mission_type, notes
+                )
+            )
+            await db.commit()
+            return cursor.lastrowid
+    
+    async def _update_participant_stats(
+        self,
+        campaign_id: int,
+        player_id: int,
+        requisition_gained: int,
+        won: bool
+    ) -> None:
+        """Update participant statistics after a game."""
+        async with aiosqlite.connect(self.db.db_path) as db:
+            # Update requisition points and battle record
+            if won:
+                await db.execute(
+                    """
+                    UPDATE campaign_participants
+                    SET requisition_points = requisition_points + ?,
+                        battles_won = battles_won + 1,
+                        supply_limit = MIN(supply_limit + ?, ?)
+                    WHERE campaign_id = ? AND player_id = ?
+                    """,
+                    (
+                        requisition_gained,
+                        self.SUPPLY_INCREASE_PER_WIN,
+                        self.MAX_SUPPLY_LIMIT,
+                        campaign_id,
+                        player_id
+                    )
+                )
+            else:
+                await db.execute(
+                    """
+                    UPDATE campaign_participants
+                    SET requisition_points = requisition_points + ?,
+                        battles_lost = battles_lost + 1
+                    WHERE campaign_id = ? AND player_id = ?
+                    """,
+                    (requisition_gained, campaign_id, player_id)
+                )
+            await db.commit()
