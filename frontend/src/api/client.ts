@@ -8,6 +8,8 @@ import type {
   Player,
   Match,
   Campaign,
+  Planet,
+  NarrativeEvent,
   Rankings,
   CreateGameRequest,
   CreatePlayerRequest,
@@ -55,6 +57,8 @@ export const campaignsApi = {
   create: (data: CreateCampaignRequest) => apiClient.post<Campaign>('/campaigns', data),
   update: (id: number, data: Partial<Campaign>) =>
     apiClient.patch<Campaign>(`/campaigns/${id}`, data),
+  getPlanets: (campaignId: number) => apiClient.get<Planet[]>(`/campaigns/${campaignId}/planets`),
+  getNarrative: (campaignId: number) => apiClient.get<NarrativeEvent[]>(`/campaigns/${campaignId}/narrative`),
 };
 
 // Rankings API

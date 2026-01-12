@@ -132,14 +132,58 @@ class CampaignResponse(CampaignBase):
     
     id: int
     is_active: bool
+    narrative_seed: int
     created_at: datetime
     ended_at: Optional[datetime]
+
+
+# Planet Models
+class PlanetBase(BaseModel):
+    """Base planet model."""
+    name: str = Field(..., description="Planet name")
+    planet_type: str = Field(..., description="Planet type (forge, death, shrine, etc.)")
+    position: int = Field(..., description="Orbital position (1-8)")
+    color: str = Field(..., description="Hex color code")
+    size: float = Field(..., description="Relative size")
+    description: str = Field(..., description="Planet description")
+
+
+class PlanetResponse(PlanetBase):
+    """Complete planet information response."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    campaign_id: int
+    games_played: int = Field(default=0)
+    is_contested: bool = Field(default=False)
+    current_controller: Optional[str] = None
+    created_at: datetime
+
+
+# Narrative Event Models
+class NarrativeEventBase(BaseModel):
+    """Base narrative event model."""
+    event_type: str = Field(..., description="Event type (battle, discovery, etc.)")
+    title: str = Field(..., description="Event title")
+    description: str = Field(..., description="Event description")
+    planet_id: Optional[int] = Field(None, description="Related planet")
+
+
+class NarrativeEventResponse(NarrativeEventBase):
+    """Complete narrative event response."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    campaign_id: int
+    game_id: Optional[int] = None
+    created_at: datetime
 
 
 # Campaign Game Models
 class CampaignGameCreate(BaseModel):
     """Model for recording a campaign game."""
     campaign_id: int = Field(..., description="Campaign ID")
+    planet_id: int = Field(..., description="Planet where battle takes place")
     attacker_discord_id: str = Field(..., description="Attacker's Discord ID")
     defender_discord_id: str = Field(..., description="Defender's Discord ID")
     attacker_score: int = Field(..., ge=0, description="Attacker's score")
@@ -154,6 +198,7 @@ class CampaignGameResponse(BaseModel):
     
     id: int
     campaign_id: int
+    planet_id: int
     attacker_id: int
     defender_id: int
     attacker_score: int

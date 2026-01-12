@@ -6,7 +6,7 @@ echo "🚀 Starting Full Warhammer Ranking System..."
 
 # Start backend in background
 echo "📡 Starting backend..."
-./scripts/start-backend.sh &
+./start-backend.sh &
 BACKEND_PID=$!
 
 # Wait a moment for backend to initialize
@@ -14,7 +14,7 @@ sleep 3
 
 # Start frontend
 echo "🎨 Starting frontend..."
-./scripts/start-frontend.sh &
+./start-frontend.sh &
 FRONTEND_PID=$!
 
 echo ""

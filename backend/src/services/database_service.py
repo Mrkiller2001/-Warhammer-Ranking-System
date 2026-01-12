@@ -17,12 +17,18 @@ class DatabaseService:
         Initialize database service.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (for SQLite only)
         """
         if db_path is None:
             # Extract path from DATABASE_URL (remove sqlite+aiosqlite:///)
-            db_path = settings.database_url.replace("sqlite+aiosqlite:///", "")
+            db_url = settings.database_url
+            if db_url.startswith("sqlite"):
+                db_path = db_url.replace("sqlite+aiosqlite:///", "")
+            else:
+                # For PostgreSQL, we keep the full connection string
+                db_path = None
         self.db_path = db_path
+        self.is_postgres = settings.database_url.startswith("postgresql")
     
     async def initialize(self) -> None:
         """Create database tables if they don't exist."""
@@ -33,6 +39,8 @@ class DatabaseService:
             await self._create_campaigns_table(db)
             await self._create_campaign_games_table(db)
             await self._create_campaign_participants_table(db)
+            await self._create_planets_table(db)
+            await self._create_narrative_events_table(db)
             await db.commit()
     
     async def _create_games_table(self, db: aiosqlite.Connection) -> None:
@@ -97,6 +105,7 @@ class DatabaseService:
                 name TEXT NOT NULL,
                 description TEXT,
                 game_id INTEGER NOT NULL,
+                narrative_seed INTEGER NOT NULL,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 ended_at TIMESTAMP,
@@ -110,6 +119,7 @@ class DatabaseService:
             CREATE TABLE IF NOT EXISTS campaign_games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 campaign_id INTEGER NOT NULL,
+                planet_id INTEGER NOT NULL,
                 attacker_id INTEGER NOT NULL,
                 defender_id INTEGER NOT NULL,
                 attacker_score INTEGER NOT NULL,
@@ -121,6 +131,7 @@ class DatabaseService:
                 notes TEXT,
                 played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (campaign_id) REFERENCES campaigns (id),
+                FOREIGN KEY (planet_id) REFERENCES planets (id),
                 FOREIGN KEY (attacker_id) REFERENCES players (id),
                 FOREIGN KEY (defender_id) REFERENCES players (id),
                 FOREIGN KEY (winner_id) REFERENCES players (id)
@@ -142,6 +153,45 @@ class DatabaseService:
                 FOREIGN KEY (campaign_id) REFERENCES campaigns (id),
                 FOREIGN KEY (player_id) REFERENCES players (id),
                 UNIQUE(campaign_id, player_id)
+            )
+        """)
+    
+    async def _create_planets_table(self, db: aiosqlite.Connection) -> None:
+        """Create planets table."""
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS planets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                planet_type TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                color TEXT NOT NULL,
+                size REAL NOT NULL,
+                description TEXT NOT NULL,
+                strategic_value TEXT NOT NULL,
+                games_played INTEGER DEFAULT 0,
+                is_contested BOOLEAN DEFAULT 0,
+                current_controller TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES campaigns (id)
+            )
+        """)
+    
+    async def _create_narrative_events_table(self, db: aiosqlite.Connection) -> None:
+        """Create narrative events table."""
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS narrative_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                campaign_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                planet_id INTEGER,
+                game_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (campaign_id) REFERENCES campaigns (id),
+                FOREIGN KEY (planet_id) REFERENCES planets (id),
+                FOREIGN KEY (game_id) REFERENCES campaign_games (id)
             )
         """)
     
@@ -353,16 +403,17 @@ class DatabaseService:
         self,
         name: str,
         game_id: int,
+        narrative_seed: int,
         description: Optional[str] = None
     ) -> int:
         """Create a new campaign."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """
-                INSERT INTO campaigns (name, description, game_id)
-                VALUES (?, ?, ?)
+                INSERT INTO campaigns (name, description, game_id, narrative_seed)
+                VALUES (?, ?, ?, ?)
                 """,
-                (name, description, game_id)
+                (name, description, game_id, narrative_seed)
             )
             await db.commit()
             return cursor.lastrowid
@@ -420,3 +471,114 @@ class DatabaseService:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(query, params)
             await db.commit()
+    
+    # Planet Operations
+    async def create_planet(
+        self,
+        campaign_id: int,
+        name: str,
+        planet_type: str,
+        position: int,
+        color: str,
+        size: float,
+        description: str,
+        strategic_value: str
+    ) -> int:
+        """Create a new planet in a campaign."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO planets (
+                    campaign_id, name, planet_type, position, color, 
+                    size, description, strategic_value
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (campaign_id, name, planet_type, position, color, size, description, strategic_value)
+            )
+            await db.commit()
+            return cursor.lastrowid
+    
+    async def get_planets_by_campaign(self, campaign_id: int) -> List[Dict[str, Any]]:
+        """Get all planets in a campaign."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """
+                SELECT * FROM planets 
+                WHERE campaign_id = ? 
+                ORDER BY position
+                """,
+                (campaign_id,)
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+    
+    async def update_planet_stats(
+        self,
+        planet_id: int,
+        games_played: int,
+        is_contested: bool,
+        current_controller: Optional[str]
+    ) -> None:
+        """Update planet battle statistics."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                UPDATE planets 
+                SET games_played = ?, is_contested = ?, current_controller = ?
+                WHERE id = ?
+                """,
+                (games_played, 1 if is_contested else 0, current_controller, planet_id)
+            )
+            await db.commit()
+    
+    async def get_planet_by_id(self, planet_id: int) -> Optional[Dict[str, Any]]:
+        """Get planet by ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM planets WHERE id = ?",
+                (planet_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+    
+    # Narrative Event Operations
+    async def create_narrative_event(
+        self,
+        campaign_id: int,
+        event_type: str,
+        title: str,
+        description: str,
+        planet_id: Optional[int] = None,
+        game_id: Optional[int] = None
+    ) -> int:
+        """Create a narrative event."""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO narrative_events (
+                    campaign_id, event_type, title, description, planet_id, game_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (campaign_id, event_type, title, description, planet_id, game_id)
+            )
+            await db.commit()
+            return cursor.lastrowid
+    
+    async def get_narrative_events_by_campaign(self, campaign_id: int) -> List[Dict[str, Any]]:
+        """Get all narrative events for a campaign."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                """
+                SELECT * FROM narrative_events 
+                WHERE campaign_id = ? 
+                ORDER BY created_at DESC
+                """,
+                (campaign_id,)
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]

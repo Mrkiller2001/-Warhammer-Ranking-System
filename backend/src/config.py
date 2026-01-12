@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite+aiosqlite:///./rankings.db"
     
+    @property
+    def async_database_url(self) -> str:
+        """Get the correct async database URL for the environment."""
+        # If DATABASE_URL is a PostgreSQL URL from Render, convert it to async
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.database_url
+    
     # Discord
     discord_token: str = ""
     discord_guild_id: str = ""

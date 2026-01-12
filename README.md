@@ -2,11 +2,16 @@
 
 Modern full-stack application for tracking Warhammer game rankings and campaigns using the Glicko-2 rating system.
 
+## 📚 Documentation
+
+- **[Local Development Setup](LOCAL_SETUP.md)** - Complete guide for setting up the project locally
+- **[Deployment Guide](DEPLOYMENT.md)** - Instructions for deploying to Render
+
 ## Stack
 
 - **Backend:** Python FastAPI (RESTful API)
 - **Frontend:** React + TypeScript
-- **Database:** SQLite
+- **Database:** SQLite (local) / PostgreSQL (production)
 
 ## Quick Start
 
@@ -80,14 +85,23 @@ curl http://localhost:8000/api/v1/rankings/game/1
 
 ## Environment Setup
 
-### Backend (.env)
+### Local Development
 ```bash
+# Backend: Use SQLite (default in .env.example)
 DATABASE_URL=sqlite+aiosqlite:///./rankings.db
 API_PORT=8000
-CORS_ORIGINS=http://localhost:3000
-```
 
-### Frontend (.env)
-```bash
+# Frontend: Point to local backend
 VITE_API_BASE_URL=http://localhost:8000/api/v1
 ```
+
+### Production (Render)
+```bash
+# Backend: PostgreSQL automatically configured
+DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+
+# Frontend: Points to deployed backend
+VITE_API_BASE_URL=https://your-api.onrender.com/api/v1
+```
+
+For detailed setup instructions, see [LOCAL_SETUP.md](LOCAL_SETUP.md)

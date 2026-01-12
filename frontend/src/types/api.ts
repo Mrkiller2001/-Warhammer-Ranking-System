@@ -40,9 +40,37 @@ export interface Campaign {
   name: string;
   description: string | null;
   game_id: number;
+  narrative_seed: number;
   is_active: boolean;
   created_at: string;
   ended_at: string | null;
+}
+
+export interface Planet {
+  id: number;
+  campaign_id: number;
+  name: string;
+  planet_type: string;
+  position: number;
+  color: string;
+  size: number;
+  description: string;
+  strategic_value: string;
+  games_played: number;
+  is_contested: boolean;
+  current_controller: string | null;
+  created_at: string;
+}
+
+export interface NarrativeEvent {
+  id: number;
+  campaign_id: number;
+  event_type: string;
+  title: string;
+  description: string;
+  planet_id: number | null;
+  game_id: number | null;
+  created_at: string;
 }
 
 export interface RankingEntry {

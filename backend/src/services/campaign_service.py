@@ -89,6 +89,7 @@ class CampaignService:
     async def record_campaign_game(
         self,
         campaign_id: int,
+        planet_id: int,
         attacker_id: int,
         defender_id: int,
         attacker_score: int,
@@ -101,6 +102,7 @@ class CampaignService:
         
         Args:
             campaign_id: Campaign ID
+            planet_id: Planet where battle takes place
             attacker_id: Attacker player ID
             defender_id: Defender player ID
             attacker_score: Attacker's score
@@ -128,6 +130,7 @@ class CampaignService:
         # Record the game in database
         game_id = await self._create_campaign_game_record(
             campaign_id=campaign_id,
+            planet_id=planet_id,
             attacker_id=attacker_id,
             defender_id=defender_id,
             attacker_score=attacker_score,
@@ -152,6 +155,15 @@ class CampaignService:
             player_id=defender_id,
             requisition_gained=outcome.defender_req,
             won=outcome.defender_won
+        )
+        
+        # Update planet statistics and generate narrative
+        await self._update_planet_after_battle(
+            planet_id=planet_id,
+            winner_id=winner_id,
+            score_diff=abs(attacker_score - defender_score),
+            game_id=game_id,
+            campaign_id=campaign_id
         )
         
         return {
@@ -215,6 +227,7 @@ class CampaignService:
     async def _create_campaign_game_record(
         self,
         campaign_id: int,
+        planet_id: int,
         attacker_id: int,
         defender_id: int,
         attacker_score: int,
@@ -230,14 +243,14 @@ class CampaignService:
             cursor = await db.execute(
                 """
                 INSERT INTO campaign_games (
-                    campaign_id, attacker_id, defender_id,
+                    campaign_id, planet_id, attacker_id, defender_id,
                     attacker_score, defender_score,
                     attacker_req, defender_req,
                     winner_id, mission_type, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    campaign_id, attacker_id, defender_id,
+                    campaign_id, planet_id, attacker_id, defender_id,
                     attacker_score, defender_score,
                     attacker_req, defender_req,
                     winner_id, mission_type, notes
@@ -284,3 +297,101 @@ class CampaignService:
                     (requisition_gained, campaign_id, player_id)
                 )
             await db.commit()
+    
+    async def _update_planet_after_battle(
+        self,
+        planet_id: int,
+        winner_id: Optional[int],
+        score_diff: int,
+        game_id: int,
+        campaign_id: int
+    ) -> None:
+        """Update planet after a battle and generate narrative."""
+        from src.services.narrative_service import NarrativeService
+        
+        # Get planet info
+        planet = await self.db.get_planet_by_id(planet_id)
+        if not planet:
+            return
+        
+        # Update games played
+        new_games_played = planet['games_played'] + 1
+        
+        # Determine controller (simplified - winner of latest battle)
+        controller = None
+        is_contested = True
+        
+        if winner_id:
+            # Get winner player info
+            async with aiosqlite.connect(self.db.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT discord_name FROM players WHERE id = ?",
+                    (winner_id,)
+                )
+                winner = await cursor.fetchone()
+                if winner:
+                    controller = winner['discord_name']
+        
+        # Update planet stats
+        await self.db.update_planet_stats(
+            planet_id=planet_id,
+            games_played=new_games_played,
+            is_contested=is_contested,
+            current_controller=controller
+        )
+        
+        # Generate battle narrative
+        if winner_id and controller:
+            narrative_service = NarrativeService()
+            
+            # Get loser name for narrative
+            async with aiosqlite.connect(self.db.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    """
+                    SELECT p.discord_name 
+                    FROM campaign_games cg
+                    JOIN players p ON (p.id = cg.attacker_id OR p.id = cg.defender_id)
+                    WHERE cg.id = ? AND p.id != ?
+                    LIMIT 1
+                    """,
+                    (game_id, winner_id)
+                )
+                loser = await cursor.fetchone()
+                loser_name = loser['discord_name'] if loser else "Unknown"
+            
+            # Generate battle narrative
+            battle_narrative = narrative_service.generate_battle_narrative(
+                planet_name=planet['name'],
+                planet_type=planet['planet_type'],
+                winner_name=controller,
+                loser_name=loser_name,
+                score_diff=score_diff
+            )
+            
+            # Create battle narrative event
+            await self.db.create_narrative_event(
+                campaign_id=campaign_id,
+                event_type="battle",
+                title=f"Battle on {planet['name']}",
+                description=battle_narrative,
+                planet_id=planet_id,
+                game_id=game_id
+            )
+            
+            # Check for conquest milestones
+            if new_games_played in [3, 5, 8]:
+                conquest_narrative = narrative_service.generate_planet_conquest_event(
+                    planet_name=planet['name'],
+                    controller=controller,
+                    games_played=new_games_played
+                )
+                
+                await self.db.create_narrative_event(
+                    campaign_id=campaign_id,
+                    event_type="conquest",
+                    title=f"Control of {planet['name']}",
+                    description=conquest_narrative,
+                    planet_id=planet_id
+                )

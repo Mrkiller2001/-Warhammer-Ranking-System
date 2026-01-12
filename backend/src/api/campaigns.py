@@ -9,9 +9,12 @@ from src.models import (
     CampaignResponse,
     CampaignUpdate,
     CampaignGameCreate,
-    CampaignGameResponse
+    CampaignGameResponse,
+    PlanetResponse,
+    NarrativeEventResponse
 )
 from src.services import DatabaseService, CampaignService
+from src.services.narrative_service import NarrativeService
 from src.dependencies import get_db_service, get_campaign_service
 
 router = APIRouter()
@@ -23,7 +26,7 @@ async def create_campaign(
     db: DatabaseService = Depends(get_db_service)
 ):
     """
-    Create a new campaign.
+    Create a new campaign with procedurally generated solar system.
     
     Args:
         campaign: Campaign creation data
@@ -37,11 +40,40 @@ async def create_campaign(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     
+    # Generate unique solar system and narrative
+    narrative_service = NarrativeService()
+    planets_data, opening_narrative, seed = narrative_service.generate_solar_system(
+        campaign.name,
+        0  # Temporary ID, will use real one after creation
+    )
+    
     # Create campaign
     campaign_id = await db.create_campaign(
         campaign.name,
         campaign.game_id,
+        seed,
         campaign.description
+    )
+    
+    # Create planets for the campaign
+    for planet_data in planets_data:
+        await db.create_planet(
+            campaign_id=campaign_id,
+            name=planet_data['name'],
+            planet_type=planet_data['planet_type'],
+            position=planet_data['position'],
+            color=planet_data['color'],
+            size=planet_data['size'],
+            description=planet_data['description'],
+            strategic_value=planet_data['strategic_value']
+        )
+    
+    # Create opening narrative event
+    await db.create_narrative_event(
+        campaign_id=campaign_id,
+        event_type="campaign_start",
+        title=f"The {campaign.name} Begins",
+        description=opening_narrative
     )
     
     # Retrieve and return created campaign
@@ -152,9 +184,15 @@ async def record_campaign_game(
     if not defender:
         raise HTTPException(status_code=404, detail="Defender not found")
     
+    # Verify planet exists
+    planet = await db.get_planet_by_id(game.planet_id)
+    if not planet:
+        raise HTTPException(status_code=404, detail="Planet not found")
+    
     # Record campaign game
     result = await campaign_service.record_campaign_game(
         campaign_id=game.campaign_id,
+        planet_id=game.planet_id,
         attacker_id=attacker['id'],
         defender_id=defender['id'],
         attacker_score=game.attacker_score,
@@ -164,3 +202,49 @@ async def record_campaign_game(
     )
     
     return result
+
+
+@router.get("/{campaign_id}/planets", response_model=List[PlanetResponse])
+async def get_campaign_planets(
+    campaign_id: int,
+    db: DatabaseService = Depends(get_db_service)
+):
+    """
+    Get all planets in a campaign.
+    
+    Args:
+        campaign_id: Campaign ID
+        db: Database service
+        
+    Returns:
+        List of planets in the campaign
+    """
+    campaign = await db.get_campaign_by_id(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    planets = await db.get_planets_by_campaign(campaign_id)
+    return [PlanetResponse(**planet) for planet in planets]
+
+
+@router.get("/{campaign_id}/narrative", response_model=List[NarrativeEventResponse])
+async def get_campaign_narrative(
+    campaign_id: int,
+    db: DatabaseService = Depends(get_db_service)
+):
+    """
+    Get narrative events for a campaign.
+    
+    Args:
+        campaign_id: Campaign ID
+        db: Database service
+        
+    Returns:
+        List of narrative events
+    """
+    campaign = await db.get_campaign_by_id(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    events = await db.get_narrative_events_by_campaign(campaign_id)
+    return [NarrativeEventResponse(**event) for event in events]
