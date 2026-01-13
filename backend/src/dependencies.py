@@ -2,20 +2,20 @@
 Dependency injection for FastAPI routes.
 """
 
-from src.services import DatabaseService, RatingService, CampaignService
+from src.services import FirestoreService, RatingService, CampaignService
 from src.config import settings
 
 # Service instances (singleton pattern)
-_db_service: DatabaseService = None
+_db_service: FirestoreService = None
 _rating_service: RatingService = None
 _campaign_service: CampaignService = None
 
 
-def get_db_service() -> DatabaseService:
-    """Get database service instance."""
+def get_db_service() -> FirestoreService:
+    """Get Firestore database service instance."""
     global _db_service
     if _db_service is None:
-        _db_service = DatabaseService()
+        _db_service = FirestoreService()
     return _db_service
 
 

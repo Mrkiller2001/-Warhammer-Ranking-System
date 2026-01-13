@@ -248,3 +248,26 @@ async def get_campaign_narrative(
     
     events = await db.get_narrative_events_by_campaign(campaign_id)
     return [NarrativeEventResponse(**event) for event in events]
+
+
+@router.get("/planets/{planet_id}/games", response_model=List[CampaignGameResponse])
+async def get_planet_games(
+    planet_id: int,
+    db: DatabaseService = Depends(get_db_service)
+):
+    """
+    Get all games that have taken place on a specific planet.
+    
+    Args:
+        planet_id: Planet ID
+        db: Database service
+        
+    Returns:
+        List of campaign games on the planet
+    """
+    planet = await db.get_planet_by_id(planet_id)
+    if not planet:
+        raise HTTPException(status_code=404, detail="Planet not found")
+    
+    games = await db.get_campaign_games_by_planet(planet_id)
+    return [CampaignGameResponse(**game) for game in games]

@@ -3,7 +3,8 @@ Configuration management using Pydantic Settings.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from pydantic import field_validator, Field
+from typing import List, Union, Annotated
 
 
 class Settings(BaseSettings):
@@ -12,19 +13,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False
+        case_sensitive=False,
+        env_parse_none_str="null"
     )
     
-    # Database
-    database_url: str = "sqlite+aiosqlite:///./rankings.db"
-    
-    @property
-    def async_database_url(self) -> str:
-        """Get the correct async database URL for the environment."""
-        # If DATABASE_URL is a PostgreSQL URL from Render, convert it to async
-        if self.database_url.startswith("postgresql://"):
-            return self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return self.database_url
+    # Firebase Configuration
+    firebase_credentials_path: str = ""  # Path to Firebase service account JSON (local dev)
+    firebase_credentials: str = ""  # Base64-encoded JSON (Vercel deployment)
+    firebase_project_id: str = ""  # Firebase project ID
     
     # Discord
     discord_token: str = ""
@@ -43,7 +39,19 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: Union[str, List[str]] = Field(
+        default=["http://localhost:3000", "http://localhost:5173"],
+        validation_alias="cors_origins"
+    )
+    
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        """Parse CORS origins from comma-separated string or list."""
+        if isinstance(v, str):
+            # Handle comma-separated string
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
     
     # Environment
     environment: str = "development"

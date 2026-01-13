@@ -5,8 +5,10 @@ Implements Warhammer 40K Crusade/Narrative Play rules.
 
 from typing import Dict, Optional
 from dataclasses import dataclass
-import aiosqlite
-from src.services.database_service import DatabaseService
+from src.services.firestore_service import FirestoreService
+
+# Alias for backward compatibility
+DatabaseService = FirestoreService
 
 
 @dataclass

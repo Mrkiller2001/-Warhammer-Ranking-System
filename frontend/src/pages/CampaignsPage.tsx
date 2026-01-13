@@ -1,13 +1,19 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { gamesApi, campaignsApi } from '@/api/client'
-import type { CreateCampaignRequest, Planet, NarrativeEvent } from '@/types/api'
+import type { CreateCampaignRequest, Planet } from '@/types/api'
 import CampaignSolarSystem from '@/components/CampaignSolarSystem'
+import PlanetDetailModal from '@/components/PlanetDetailModal'
+import RecordCampaignGameModal from '@/components/RecordCampaignGameModal'
+import RegisterPlayerModal from '@/components/RegisterPlayerModal'
 
 function CampaignsPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
+  const [showRecordGame, setShowRecordGame] = useState(false)
+  const [showRegisterPlayer, setShowRegisterPlayer] = useState(false)
   const [selectedCampaign, setSelectedCampaign] = useState<any | null>(null)
+  const [selectedPlanet, setSelectedPlanet] = useState<Planet | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'system'>('list')
   const [formData, setFormData] = useState<CreateCampaignRequest>({
     name: '',
@@ -45,8 +51,7 @@ function CampaignsPage() {
   }
 
   const handlePlanetClick = (planet: Planet) => {
-    console.log('Planet clicked:', planet)
-    // Future: Show planet details or start a battle
+    setSelectedPlanet(planet)
   }
 
   // Load planets and narrative for selected campaign
@@ -66,6 +71,33 @@ function CampaignsPage() {
 
   return (
     <div>
+      {/* Planet Detail Modal */}
+      {selectedPlanet && (
+        <PlanetDetailModal
+          planet={selectedPlanet}
+          onClose={() => setSelectedPlanet(null)}
+        />
+      )}
+
+      {/* Record Campaign Game Modal */}
+      {showRecordGame && selectedCampaign && planets && (
+        <RecordCampaignGameModal
+          campaignId={selectedCampaign.id}
+          gameId={selectedCampaign.game_id}
+          planets={planets}
+          onClose={() => setShowRecordGame(false)}
+        />
+      )}
+
+      {/* Register Player Modal */}
+      {showRegisterPlayer && selectedCampaign && (
+        <RegisterPlayerModal
+          campaignId={selectedCampaign.id}
+          gameId={selectedCampaign.game_id}
+          onClose={() => setShowRegisterPlayer(false)}
+        />
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Campaigns</h1>
         <button onClick={() => setShowForm(!showForm)}>
@@ -119,12 +151,50 @@ function CampaignsPage() {
       {selectedCampaign && viewMode === 'system' && planets && planets.length > 0 ? (
         <>
           <div className="card" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h2>{selectedCampaign.name}</h2>
-                <p>{selectedCampaign.description || 'No description'}</p>
+                <p style={{ margin: 0 }}>{selectedCampaign.description || 'No description'}</p>
               </div>
               <button onClick={() => setViewMode('list')}>Back to List</button>
+            </div>
+            
+            {/* Campaign Actions */}
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowRecordGame(true)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#4a90e2',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                ⚔️ Record Battle
+              </button>
+              <button
+                onClick={() => setShowRegisterPlayer(true)}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#4caf50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                👤 Register Player
+              </button>
             </div>
           </div>
 

@@ -73,6 +73,25 @@ export interface NarrativeEvent {
   created_at: string;
 }
 
+export interface CampaignGame {
+  id: number;
+  campaign_id: number;
+  planet_id: number;
+  attacker_id: number;
+  defender_id: number;
+  attacker_score: number;
+  defender_score: number;
+  attacker_req: number;
+  defender_req: number;
+  winner_id: number | null;
+  mission_type: string;
+  notes: string | null;
+  played_at: string;
+  attacker_name: string;
+  defender_name: string;
+  winner_name: string | null;
+}
+
 export interface RankingEntry {
   rank: number;
   discord_id: string;

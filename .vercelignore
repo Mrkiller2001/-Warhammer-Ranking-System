@@ -1,0 +1,35 @@
+# Vercel
+.vercel
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
+__pycache__/
+
+# Environment
+.env
+.env.local
+.env.production
+*.local
+
+# Build outputs
+dist/
+build/
+*.pyc
+
+# Database (local development only)
+*.db
+*.sqlite
+
+# Firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

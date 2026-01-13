@@ -10,6 +10,7 @@ import type {
   Campaign,
   Planet,
   NarrativeEvent,
+  CampaignGame,
   Rankings,
   CreateGameRequest,
   CreatePlayerRequest,
@@ -17,7 +18,7 @@ import type {
   CreateCampaignRequest,
 } from '@/types/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -59,6 +60,8 @@ export const campaignsApi = {
     apiClient.patch<Campaign>(`/campaigns/${id}`, data),
   getPlanets: (campaignId: number) => apiClient.get<Planet[]>(`/campaigns/${campaignId}/planets`),
   getNarrative: (campaignId: number) => apiClient.get<NarrativeEvent[]>(`/campaigns/${campaignId}/narrative`),
+  getPlanetGames: (planetId: number) => apiClient.get<CampaignGame[]>(`/campaigns/planets/${planetId}/games`),
+  recordGame: (data: any) => apiClient.post(`/campaigns/games`, data),
 };
 
 // Rankings API

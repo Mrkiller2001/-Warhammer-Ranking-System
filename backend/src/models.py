@@ -209,6 +209,9 @@ class CampaignGameResponse(BaseModel):
     mission_type: str
     notes: Optional[str]
     played_at: datetime
+    attacker_name: Optional[str] = None
+    defender_name: Optional[str] = None
+    winner_name: Optional[str] = None
 
 
 # Ranking Models
